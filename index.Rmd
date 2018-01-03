@@ -1,0 +1,184 @@
+---
+title: "Practical Machine Learning Project (Human activity recognition of weight lifting exercises)"
+author: "Mohammad Ullah"
+date: "January 3, 2018"
+output: html_document
+---
+
+## Introdution:
+
+It is now possible to collect personal movement data relatively inexpensively by using devices such as Jawbone Up, Nike FuelBand and Fitbit. Activity recognition research is generally focused on predicting what kind of activity is performed at ta specific point in time. On the contrary, how well an activity is performed, is traditionally neglected. In this project, we used weight lifting exercises data set from accelerometers on the belt, forearm, arm and dumbell of 6 participants [1] to build a model to predict the manner in which they did the exercise. 
+
+## Getting and Cleaning data:
+
+### Data source:
+
+Training data : https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+Test data : https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv 
+
+### Required libraries
+
+```{r sec1, results='hide', message=FALSE}
+library(mlbench)
+library(caret)
+library(parallel)
+library(doParallel)
+library(rpart)
+library(knitr)
+library(kableExtra)
+```
+
+```{r sec2}
+
+if (!file.exists("pml-training.csv")) {  
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+}
+if (!file.exists("pml-testing.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile ="pml-testing.csv")
+}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+### Cleaning data
+
+The first two columns are sequence number and participant name, and next five columns are time stamp and feature extraction window. These values are not important to predict exercise quality. So, I have removed the first seven columns from both training and test data sets. 
+
+```{r sec3}
+training <- training[,-c(1:7)]
+testing <- testing[,-c(1:7)]
+```
+
+The empty observations are replaced with NA. The zero and near zero variance predictors are removed. Finally, predictors with more than 50% NA are also removed from the data set. There is no missing value in the data sets.
+
+```{r sec4, cache=TRUE}
+training[training == ""] <- NA
+x = nearZeroVar(training)
+training <- training[, -x]
+training <- training[, -which(colMeans(is.na(training)) > 0.5)]
+
+
+testing[testing == ""] <- NA
+testing <- testing[, -nearZeroVar(testing)]
+
+table(complete.cases(training))
+table(complete.cases(testing))
+
+dim(training)
+dim(testing)
+```
+
+## Training and Validation data set
+
+Training data set is divided into two parts. 75% data is kept for training and 25% is kept for validation.
+
+```{r sec5}
+inTraining <- createDataPartition(training$classe, p = .75, list=FALSE)
+subtraining <- training[inTraining,]
+validation <- training[-inTraining,]
+```
+
+## Training model
+
+Two models are created using random forest and gradient boosting method. The final model is chosen based on the highest accuracy. The two models are described below. 
+
+### Regression and Classification Tree
+
+At first, I fit a model based on classification tree using rpart function. 
+
+```{r sec6, cache=TRUE}
+set.seed(2311)
+fitrpart <- rpart(classe ~ ., data = subtraining, method = "class")
+
+print("Make prediction on the validation data set")
+predtree <- predict(fitrpart, validation, type = "class")
+matrix1 <- confusionMatrix(predtree, validation$classe)
+
+print("Confusion Matrix and other values")
+matrix1$table
+matrix1$overall
+```
+
+### Random Forest
+
+Then, I tried random forest method using 5-fold cross validation 
+
+```{r sec7, cache=TRUE}
+x <- subtraining[,-53]
+y <- subtraining[,53]
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           allowParallel = TRUE)
+
+set.seed(2314)
+fitrf <- train(x, y, method = "rf", data = subtraining, 
+               trControl = fitControl)
+stopCluster(cluster)
+registerDoSEQ()
+
+print("Make prediction on the validation data set")
+predrf <- predict(fitrf, validation)
+matrix2 <- confusionMatrix(predrf, validation$classe)
+
+print("Confusion Matrix and other values")
+matrix2$table
+matrix2$overall
+```
+
+### Gradient Boosting
+
+Finally, I used Gradient boosting to fit the third model. 
+
+```{r sec8, cache=TRUE}
+set.seed(2310)
+fitcontrol1<-trainControl(method="cv", number = 5)
+fitgbm<-train(classe~., data=subtraining, method="gbm", 
+              trControl=fitcontrol1, verbose = FALSE)
+
+
+print("Make prediction on the validation data set")
+predgbm <- predict(fitgbm, validation)
+matrix3 <- confusionMatrix(predgbm, validation$classe)
+
+print("Confusion Matrix and other values")
+matrix3$table
+matrix3$overall
+
+
+```
+
+## Comparison between three models
+
+
+```{r sec9}
+
+dt <- data.frame(Method = c("Classification tree", "Random Forest",
+                            "Gradient Boosting"), 
+                 Accuracy = c("0.7745", "0.9937", "0.9556"),
+                 Out_sample_error = c("0.2255", "0.0063",
+                                      "0.0444"))
+kable(dt, digits = 4)
+
+```
+
+## Model Selection
+
+From the table in previous section, we see that accuracy is 99.37% in the model fitted using the random forest method. The out of sample error is 0.0063 (1-0.9937) or 0.6%. Hence, I used random forest model fit to predict the 20 test cases.
+
+## Prediction of test cases
+
+```{r sec10}
+
+predfinal <- predict(fitrf, testing)
+df <- data.frame(Problem_id = testing$problem_id, 
+                 Prediction = predfinal)
+
+kable(df, align = "r")
+```
+
+## Reference
+
+1. E. Velloso, A. Bulling, H. Gellersen, W. Ugulino and H. Fuks, Proc. of 4th Inter. Conf. in Cooperation with SIGCHI, Stuttgart, Germany, 2013
