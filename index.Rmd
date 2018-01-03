@@ -182,3 +182,9 @@ kable(df, align = "r")
 ## Reference
 
 1. E. Velloso, A. Bulling, H. Gellersen, W. Ugulino and H. Fuks, Proc. of 4th Inter. Conf. in Cooperation with SIGCHI, Stuttgart, Germany, 2013
+
+## Online links
+
+1. The github page can be found in the following link
+
+  https://github.com/mohammadullah/Practical-Machine-Learning
